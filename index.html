@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Name Map</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            background: black;
+            color: lime;
+            font-family: 'Courier New', monospace;
+            overflow: hidden;
+            height: 100vh;
+        }
+        
+        .header {
+            position: fixed;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 1000;
+            padding: 10px 20px;
+        }
+        
+        .header h1 {
+            font-size: 24px;
+            text-shadow: 0 0 10px lime;
+        }
+        
+        #canvasContainer {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            overflow: hidden;
+            cursor: grab;
+        }
+        
+        #canvasContainer:active {
+            cursor: grabbing;
+        }
+        
+        #canvas {
+            position: absolute;
+            width: 5000px;
+            height: 5000px;
+            background: black;
+        }
+        
+        .nickname {
+            position: absolute;
+            padding: 15px 25px;
+            background: rgba(0, 0, 0, 0.7);
+            color: lime;
+            border: 2px solid lime;
+            border-radius: 25px;
+            font-size: 14px;
+            cursor: pointer;
+            box-shadow: 0 0 15px lime;
+            max-width: 300px;
+            word-wrap: break-word;
+            text-align: center;
+            line-height: 1.4;
+            min-height: 50px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: opacity 0.3s, transform 0.3s;
+        }
+        
+        .donut-btn {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            z-index: 1001;
+            background: white;
+            color: black;
+            border: 2px solid lime;
+            border-radius: 5px;
+            padding: 20px 40px;
+            font-size: 18px;
+            font-weight: bold;
+            cursor: pointer;
+            box-shadow: 0 0 20px lime;
+        }
+        
+        .donut-btn:hover {
+            background: lime;
+        }
+        
+        /* Анимация для голограммы */
+        @keyframes hologramGlow {
+            0% { box-shadow: 0 0 5px lime, 0 0 10px lime; }
+            50% { box-shadow: 0 0 20px lime, 0 0 40px lime; }
+            100% { box-shadow: 0 0 5px lime, 0 0 10px lime; }
+        }
+        
+        .hologram {
+            animation: hologramGlow 3s infinite;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>NAME MAP</h1>
+    </div>
+    
+    <div id="canvasContainer">
+        <div id="canvas">
+            <!-- Никнеймы появятся здесь -->
+        </div>
+    </div>
+    
+    <button class="donut-btn" id="donutButton">🍩 DONUT 1₽</button>
+    
+    <script>
+    // ===== ОСНОВНОЙ СКРИПТ =====
+    
+    // Находим элементы
+    const canvas = document.getElementById('canvas');
+    const container = document.getElementById('canvasContainer');
+    const donutButton = document.getElementById('donutButton');
+    
+    // 1. Перетаскивание
+    let isDragging = false;
+    let startX, startY;
+    let canvasLeft = 0, canvasTop = 0;
+    
+    container.addEventListener('mousedown', function(e) {
+        if (e.target === donutButton) return;
+        isDragging = true;
+        startX = e.clientX;
+        startY = e.clientY;
+        canvasLeft = parseInt(canvas.style.left) || 0;
+        canvasTop = parseInt(canvas.style.top) || 0;
+        container.style.cursor = 'grabbing';
+    });
+    
+    document.addEventListener('mouseup', () => {
+        isDragging = false;
+        container.style.cursor = 'grab';
+    });
+    
+    document.addEventListener('mousemove', function(e) {
+        if (!isDragging) return;
+        const deltaX = e.clientX - startX;
+        const deltaY = e.clientY - startY;
+        canvas.style.left = (canvasLeft + deltaX) + 'px';
+        canvas.style.top = (canvasTop + deltaY) + 'px';
+    });
+    
+    // 2. Генератор ID
+    function generateID() {
+        return 'NICK_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5);
+    }
+    
+    // 3. Функция для обновления позиции на сервере
+    async function updateNickPositionOnServer(id, x, y) {
+        try {
+            await fetch('/api/update-nick-position', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id, x, y })
+            });
+            console.log(`Позиция обновлена для ${id}`);
+        } catch (error) {
+            console.log('Не удалось обновить позицию:', error);
+        }
+    }
+    
+    // 4. Функция для спирального расположения
+    function arrangeNicksInSpiral() {
+        const nicks = document.querySelectorAll('.nickname');
+        console.log('Располагаю ники спиралью:', nicks.length);
+        
+        if (nicks.length === 0) return;
+        
+        // Центр экрана
+        const centerX = window.innerWidth / 2;
+        const centerY = window.innerHeight / 2;
+        
+        // Параметры спирали
+        const angleStep = 2.8;
+        const radiusStep = 120;
+        let currentRadius = 50;
+        let currentAngle = 0;
+        
+        // Расставляем все ники по спирали
+        nicks.forEach((nick, index) => {
+            // Рассчитываем координаты
+            const x = centerX + Math.cos(currentAngle) * currentRadius - 50;
+            const y = centerY + Math.sin(currentAngle) * currentRadius - 20;
+            
+            // Плавное перемещение
+            nick.style.transition = 'left 0.5s ease, top 0.5s ease';
+            nick.style.left = x + 'px';
+            nick.style.top = y + 'px';
+            
+            // Увеличиваем для следующего
+            currentAngle += angleStep;
+            currentRadius += radiusStep;
+            
+            // Убираем transition после анимации
+            setTimeout(() => {
+                nick.style.transition = '';
+            }, 500);
+            
+            // Обновляем позицию на сервере
+            updateNickPositionOnServer(nick.dataset.id, x, y);
+        });
+        
+        console.log('Ники расположены по спирали');
+    }
+    
+    // 5. Голографическая анимация
+    function createNickHologramAnimation(text, x, y, id) {
+        return new Promise((resolve) => {
+            // Создаем эффект сканирования
+            const scanEffect = document.createElement('div');
+            scanEffect.style.position = 'absolute';
+            scanEffect.style.left = x + 'px';
+            scanEffect.style.top = y + 'px';
+            scanEffect.style.width = '10px';
+            scanEffect.style.height = '0';
+            scanEffect.style.background = 'linear-gradient(to bottom, transparent, lime, transparent)';
+            scanEffect.style.boxShadow = '0 0 30px lime';
+            scanEffect.style.zIndex = '1000';
+            scanEffect.style.transition = 'height 0.5s ease';
+            
+            canvas.appendChild(scanEffect);
+            
+            // Анимация сканирования
+            setTimeout(() => {
+                scanEffect.style.height = '100px';
+                
+                // После сканирования создаем ник
+                setTimeout(() => {
+                    const nickElement = document.createElement('div');
+                    nickElement.className = 'nickname hologram';
+                    nickElement.textContent = text;
+                    nickElement.style.left = x + 'px';
+                    nickElement.style.top = y + 'px';
+                    nickElement.style.position = 'absolute';
+                    nickElement.style.opacity = '0';
+                    nickElement.style.transform = 'scale(0.8)';
+                    nickElement.style.filter = 'blur(10px)';
+                    nickElement.dataset.id = id;
+                    
+                    canvas.appendChild(nickElement);
+                    
+                    // Удаляем эффект сканирования
+                    scanEffect.remove();
+                    
+                    // Анимация появления ника
+                    setTimeout(() => {
+                        nickElement.style.transition = 'all 0.7s cubic-bezier(0.34, 1.56, 0.64, 1)';
+                        nickElement.style.opacity = '1';
+                        nickElement.style.transform = 'scale(1)';
+                        nickElement.style.filter = 'blur(0px)';
+                        
+                        // Эффект "стабилизации"
+                        setTimeout(() => {
+                            nickElement.style.transition = '';
+                            resolve(nickElement);
+                        }, 700);
+                    }, 50);
+                }, 500);
+            }, 100);
+        });
+    }
+    
+    // 6. Загрузка с сервера
+    async function loadNicksFromServer() {
+        console.log('Загружаю ники...');
+        
+        try {
+            const response = await fetch('/api/get-all-nicks');  // ⬅️ ИСПРАВЛЕНО
+            const nicks = await response.json();
+            
+            console.log('С сервера получено:', nicks.length, 'ников');
+            
+            // Очищаем старые ники
+            const oldNicks = document.querySelectorAll('.nickname[data-id^="NICK_"]');
+            oldNicks.forEach(nick => nick.remove());
+            
+            // Добавляем все ники из сервера
+            nicks.forEach(nick => {
+                const el = document.createElement('div');
+                el.className = 'nickname';
+                el.textContent = nick.text;
+                el.style.left = '100px';
+                el.style.top = '100px';
+                el.dataset.id = nick.id;
+                canvas.appendChild(el);
+            });
+            
+            // Расставляем спиралью
+            setTimeout(() => {
+                arrangeNicksInSpiral();
+                console.log('Всего ников на странице:', document.querySelectorAll('.nickname').length);
+            }, 100);
+            
+            return nicks.length;
+            
+        } catch (error) {
+            console.log('Сервер недоступен:', error.message);
+            return 0;
+        }
+    }
+    
+    // 7. Добавление нового ника с анимацией
+    donutButton.addEventListener('click', async function() {
+        const nickname = prompt('Введите ваш ник:');
+        if (!nickname || nickname.trim() === '') return;
+        
+        const nickId = generateID();
+        
+        // Временные координаты
+        const x = 100;
+        const y = 100;
+        
+        // Скрываем кнопку
+        this.style.display = 'none';
+        
+        try {
+            // Создаем ник с голографической анимацией
+            const nickElement = await createNickHologramAnimation(nickname, x, y, nickId);
+            
+            // Сохраняем на сервер
+            await fetch('/api/save-nick', {  // ⬅️ ИСПРАВЛЕНО
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    id: nickId,
+                    text: nickname.trim(),
+                    x: x,
+                    y: y
+                })
+            });
+            
+            console.log('Сохранено:', nickId);
+            
+            // Перерасчет спирали
+            setTimeout(() => {
+                arrangeNicksInSpiral();
+            }, 1000);
+            
+        } catch (error) {
+            console.error('Ошибка:', error);
+        }
+    });
+    
+    // 8. Загрузка при старте
+    window.addEventListener('load', async function() {
+        console.log('Страница загружена');
+        
+        // Загружаем сохраненные ники
+        await loadNicksFromServer();
+        
+        // Если нет ников вообще
+        if (document.querySelectorAll('.nickname').length === 0) {
+            console.log('Добавляю тестовый ник');
+            const testNick = document.createElement('div');
+            testNick.className = 'nickname';
+            testNick.textContent = 'Кликай на кнопку ↓';
+            testNick.style.left = '500px';
+            testNick.style.top = '500px';
+            testNick.dataset.id = 'test_' + Date.now();
+            canvas.appendChild(testNick);
+        }
+        
+        console.log('Всего ников:', document.querySelectorAll('.nickname').length);
+    });
+    </script>
+</body>
+</html>
