@@ -1,178 +1,124 @@
 const express = require('express');
-const fs = require('fs').promises;
-const path = require('path');
+const { createClient } = require('@supabase/supabase-js');
 const cors = require('cors');
+const path = require('path');
 
 const app = express();
-
-// Логирование всех запросов
-app.use((req, res, next) => {
-    console.log(`${new Date().toISOString()} ${req.method} ${req.url}`);
-    next();
-});
-
 app.use(cors());
 app.use(express.json());
-
-// Раздаём статические файлы
 app.use(express.static(__dirname));
 
-const DB_FOLDER = path.join(__dirname, 'database');
+// ===== 1. ПОДКЛЮЧЕНИЕ К SUPABASE =====
+// ВСТАВЬ СВОЮ СТРОКУ ПОДКЛЮЧЕНИЯ И API КЛЮЧ СЮДА
+const supabaseUrl = 'https://ypdhjdwpztaplznzbxbw.supabase.co';
+const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlwZGhqZHdwenRhcGx6bnpieGJ3Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2NzQ0MTM0MCwiZXhwIjoyMDgzMDE3MzQwfQ.ucvNbwfC3GecpJe5wLM6ecG1nM25wOhSPY2CeyR0jVA'; // Найдешь в Settings -> API
+const supabase = createClient(supabaseUrl, supabaseKey);
 
-// Создаем папку database если её нет
-(async () => {
-    try {
-        await fs.mkdir(DB_FOLDER, { recursive: true });
-        console.log('✅ Папка database создана');
-    } catch (err) {
-        console.log('ℹ️ Папка database уже существует');
-    }
-})();
+// ===== 2. API ДЛЯ СООБЩЕНИЙ =====
 
-// 1. Сохранить ник в файл
+// 2.1. Сохранить новое сообщение (текст или арт)
 app.post('/api/save-nick', async (req, res) => {
-    console.log('📤 Получен запрос на сохранение ника');
-    
     try {
-        const { id, text, x, y } = req.body;
+        const { id, text, x, y, type = 'text' } = req.body;
         
-        if (!id || !text) {
-            return res.status(400).json({ error: 'Нет id или текста' });
-        }
+        // Вставляем данные в таблицу messages
+        const { data, error } = await supabase
+            .from('messages')
+            .insert([
+                {
+                    nick_id: id,        // наш сгенерированный NICK_...
+                    content: text,      // сам текст или URL картинки
+                    x: x || 0,
+                    y: y || 0,
+                    type: type          // 'text', 'art', 'miku'
+                }
+            ])
+            .select(); // Возвращаем созданную запись
         
-        const nickData = {
-            id: id,
-            text: text,
-            x: x || 0,
-            y: y || 0,
-            timestamp: new Date().toISOString(),
-            savedAt: new Date().toLocaleString('ru-RU')
-        };
+        if (error) throw error;
         
-        const filename = path.join(DB_FOLDER, `${id}.json`);
-        await fs.writeFile(filename, JSON.stringify(nickData, null, 2));
-        
-        console.log(`✅ Файл сохранён: ${id}.json`);
-        res.json({ success: true, message: `Файл ${id}.json создан` });
+        console.log(`✅ Сохранено в Supabase: ${id}`);
+        res.json({ success: true, data: data[0] });
         
     } catch (error) {
-        console.error('❌ Ошибка сохранения:', error);
+        console.error('❌ Ошибка сохранения:', error.message);
         res.status(500).json({ error: error.message });
     }
 });
 
-// 2. Получить все ники
+// 2.2. Получить ВСЕ сообщения
 app.get('/api/get-all-nicks', async (req, res) => {
-    console.log('📥 Запрос на получение всех ников');
-    
     try {
-        try {
-            await fs.access(DB_FOLDER);
-        } catch {
-            await fs.mkdir(DB_FOLDER, { recursive: true });
-            return res.json([]);
-        }
+        // Получаем все записи, отсортированные по времени создания
+        const { data, error } = await supabase
+            .from('messages')
+            .select('*')
+            .order('created_at', { ascending: true });
         
-        const files = await fs.readdir(DB_FOLDER);
-        const jsonFiles = files.filter(f => f.endsWith('.json'));
+        if (error) throw error;
         
-        console.log(`Найдено ${jsonFiles.length} .json файлов`);
-        
-        const allNicks = [];
-        
-        for (const file of jsonFiles) {
-            try {
-                const content = await fs.readFile(path.join(DB_FOLDER, file), 'utf8');
-                const data = JSON.parse(content);
-                allNicks.push(data);
-            } catch (err) {
-                console.error(`Ошибка чтения файла ${file}:`, err.message);
-            }
-        }
-        
-        console.log(`Отправляю ${allNicks.length} ников`);
-        res.json(allNicks);
+        console.log(`📥 Загружено из Supabase: ${data.length} сообщений`);
+        res.json(data);
         
     } catch (error) {
-        console.error('❌ Ошибка получения ников:', error);
+        console.error('❌ Ошибка загрузки:', error.message);
         res.status(500).json({ error: error.message });
     }
 });
 
-// 3. Обновить позицию ника
-app.post('/api/update-nick-position', async (req, res) => {
-    console.log('📝 Обновление позиции ника');
-    
+// 2.3. Удалить сообщение (для модерации)
+app.post('/api/delete-nick', async (req, res) => {
+    try {
+        const { id } = req.body;
+        
+        const { error } = await supabase
+            .from('messages')
+            .delete()
+            .eq('nick_id', id); // Ищем по нашему nick_id
+        
+        if (error) throw error;
+        
+        res.json({ success: true });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// 2.4. Обновить позицию сообщения
+app.post('/api/update-position', async (req, res) => {
     try {
         const { id, x, y } = req.body;
         
-        if (!id) {
-            return res.status(400).json({ error: 'Нет ID' });
-        }
+        const { error } = await supabase
+            .from('messages')
+            .update({ x, y })
+            .eq('nick_id', id);
         
-        const filename = path.join(DB_FOLDER, `${id}.json`);
+        if (error) throw error;
         
-        try {
-            await fs.access(filename);
-        } catch {
-            return res.status(404).json({ error: 'Файл не найден' });
-        }
-        
-        const content = await fs.readFile(filename, 'utf8');
-        const data = JSON.parse(content);
-        
-        data.x = x || data.x;
-        data.y = y || data.y;
-        data.updatedAt = new Date().toISOString();
-        
-        await fs.writeFile(filename, JSON.stringify(data, null, 2));
-        
-        console.log(`✅ Позиция обновлена: ${id}`);
-        res.json({ success: true, message: 'Позиция обновлена' });
-        
+        res.json({ success: true });
     } catch (error) {
-        console.error('❌ Ошибка обновления:', error);
         res.status(500).json({ error: error.message });
     }
 });
 
-// 4. Тестовый endpoint
-app.get('/api/test', (req, res) => {
-    res.json({ 
-        message: 'Сервер работает!', 
-        time: new Date().toISOString(),
-        project: 'Name Map'
-    });
-});
-
-// 5. Проверка здоровья сервера
+// ===== 3. ТЕСТОВЫЙ ENDPOINT =====
 app.get('/api/health', (req, res) => {
     res.json({ 
-        status: 'ok',
-        message: 'Server is running',
+        status: 'healthy',
+        database: 'Supabase PostgreSQL',
         timestamp: new Date().toISOString()
     });
 });
 
-// 6. Главная страница
+// ===== 4. ВСЕ ОСТАЛЬНЫЕ ЗАПРОСЫ = HTML =====
 app.get('*', (req, res) => {
     res.sendFile(path.join(__dirname, 'index.html'));
 });
 
+// ===== 5. ЗАПУСК СЕРВЕРА =====
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, '0.0.0.0', () => {
-    console.log('='.repeat(50));
-    console.log(`🚀 СЕРВЕР ЗАПУЩЕН НА ПОРТУ ${PORT}`);
-    console.log(`📁 База данных: ${DB_FOLDER}`);
-    console.log(`🌍 Режим: ${process.env.NODE_ENV || 'development'}`);
-    console.log('='.repeat(50));
-});
-
-// Обработка ошибок
-process.on('uncaughtException', (err) => {
-    console.error('❌ НЕОБРАБОТАННАЯ ОШИБКА:', err);
-});
-
-process.on('unhandledRejection', (reason, promise) => {
-    console.error('❌ НЕОБРАБОТАННЫЙ REJECTION:', reason);
+app.listen(PORT, () => {
+    console.log(`🚀 Сервер запущен на порту ${PORT}`);
+    console.log(`📊 База данных: Supabase PostgreSQL`);
 });
