@@ -10,8 +10,8 @@ app.use(express.static(__dirname));
 
 // ===== 1. ПОДКЛЮЧЕНИЕ К SUPABASE =====
 // ВСТАВЬ СВОЮ СТРОКУ ПОДКЛЮЧЕНИЯ И API КЛЮЧ СЮДА
-const supabaseUrl = 'https://ypdhjdwpztaplznzbxbw.supabase.co';
-const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlwZGhqZHdwenRhcGx6bnpieGJ3Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2NzQ0MTM0MCwiZXhwIjoyMDgzMDE3MzQwfQ.ucvNbwfC3GecpJe5wLM6ecG1nM25wOhSPY2CeyR0jVA'; // Найдешь в Settings -> API
+const supabaseUrl = process.env.SUPABASE_URL;
+const supabaseKey = process.env.SUPABASE_KEY;
 const supabase = createClient(supabaseUrl, supabaseKey);
 
 // ===== 2. API ДЛЯ СООБЩЕНИЙ =====
@@ -121,4 +121,5 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
     console.log(`🚀 Сервер запущен на порту ${PORT}`);
     console.log(`📊 База данных: Supabase PostgreSQL`);
+
 });
